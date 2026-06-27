@@ -1,0 +1,211 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-noquoting]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{parskip}
+
+\definecolor{codebg}{rgb}{0.96,0.96,0.96}
+\definecolor{codeframe}{rgb}{0.85,0.85,0.85}
+\definecolor{kw}{rgb}{0.0,0.3,0.6}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!50!black,
+  urlcolor=blue!60!black,
+  citecolor=blue!50!black
+}
+
+\lstdefinestyle{shell}{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  frame=single,
+  rulecolor=\color{codeframe},
+  breaklines=true,
+  columns=fullflexible,
+  showstringspaces=false,
+  xleftmargin=8pt,
+  xrightmargin=8pt,
+  aboveskip=8pt,
+  belowskip=8pt
+}
+\lstset{style=shell}
+
+\titlespacing*{\section}{0pt}{1.4ex plus 1ex minus .2ex}{1ex plus .2ex}
+\titlespacing*{\subsection}{0pt}{1.2ex plus 1ex minus .2ex}{0.8ex plus .2ex}
+
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{\vspace{-1.5cm}\textbf{Informe --- Simulador RISC-V (RV32I)}}
+\author{CS3051 Arquitectura de Computadores 2025-II \\ HW\#6 / Tarea 4}
+\date{}
+
+\begin{document}
+
+\maketitle
+\vspace{-0.8cm}
+
+\begin{center}
+\small
+Repositorio: \url{https://github.com/Adelphos21/RISCito-V}
+\end{center}
+
+\hrulefill
+
+\section{Lenguaje utilizado}
+
+\textbf{C++17}, compilado con \code{g++} (MSYS2 ucrt64). Se eligió C++ por ser un
+lenguaje de sistemas con control preciso sobre tipos enteros de ancho fijo
+(\code{uint32\_t}/\code{int32\_t}), lo que facilita modelar el comportamiento
+exacto de las operaciones de RISC-V (extensión de signo, shifts lógicos y
+aritméticos, overflow modular), y por ser el lenguaje del simulador de ejemplo
+entregado.
+
+\section{Arquitectura del simulador}
+
+El estado arquitectural de la CPU se modela en la clase \code{Simulator}:
+
+\begin{itemize}[noitemsep,topsep=2pt]
+  \item \textbf{PC}: \code{uint32\_t}.
+  \item \textbf{32 registros}: arreglo \code{uint32\_t regs[32]}, con \code{x0}
+        cableado a cero.
+  \item \textbf{Memoria}: \code{std::vector<uint8\_t>} de \textbf{1\,MiB}, plana y
+        byte-addressable, almacenada en \textbf{little-endian} (formato de
+        RISC-V).
+\end{itemize}
+
+La ejecución de una instrucción sigue el ciclo pedido:
+
+\begin{enumerate}[noitemsep,topsep=2pt]
+  \item \textbf{Fetch}: se lee la palabra de 32 bits apuntada por el PC
+        (\code{read32}).
+  \item \textbf{Decode}: se extraen \code{opcode}, \code{rd}, \code{funct3},
+        \code{rs1}, \code{rs2}, \code{funct7} y el inmediato según el formato
+        (R, I, S, B, U, J).
+  \item \textbf{Execute}: un \code{switch} sobre el opcode ejecuta el
+        comportamiento.
+  \item \textbf{Writeback}: se actualizan registro destino y/o PC; se vuelve a
+        forzar \code{x0 = 0}.
+\end{enumerate}
+
+\section{Features implementadas}
+
+\subsection{Obligatorias}
+
+\begin{itemize}[noitemsep,topsep=2pt]
+  \item[\checkmark] \textbf{ISA base RV32I de 32 bits} --- las 37 instrucciones
+        del Anexo A.
+  \item[\checkmark] \textbf{Memoria little-endian}.
+  \item[\checkmark] \textbf{Carga de programas} desde binario crudo en
+        \code{0x00000000}.
+  \item[\checkmark] \textbf{Ejecución paso por paso} (\code{step}) controlada por
+        el usuario.
+  \item[\checkmark] \textbf{Inspección de PC, registros y memoria} (\code{pc},
+        \code{regs}, \code{mem}).
+\end{itemize}
+
+\subsection{Adicionales (ideas extra del enunciado)}
+
+\begin{itemize}[noitemsep,topsep=2pt]
+  \item[\checkmark] \textbf{\code{ecall}} estilo SPIM: \code{print\_int},
+        \code{print\_string}, \code{print\_char}, \code{read\_int},
+        \code{read\_string}, \code{exit} (servicios 1, 4, 11, 5, 8, 10/17).
+  \item[\checkmark] \textbf{Desensamblador} integrado: \code{step} y
+        \code{disasm} muestran cada instrucción en ensamblador con nombres ABI.
+  \item[\checkmark] \textbf{\code{ebreak}} y \textbf{detección de bucle infinito}
+        para terminar \code{run}.
+  \item[\checkmark] \textbf{Mini-ensamblador} propio (Python) para generar
+        binarios de prueba reproducibles y permitir la auto-verificación del
+        simulador.
+\end{itemize}
+
+\subsection{Decisiones de diseño}
+
+\begin{itemize}[noitemsep,topsep=2pt]
+  \item \textbf{\code{x0} cableado a cero}: toda escritura a \code{x0} se ignora
+        (\code{set\_reg}).
+  \item \textbf{Memoria acotada y verificada}: los accesos fuera de
+        \code{[0, 1\,MiB)} se reportan como error explícito y detienen la CPU,
+        evitando comportamiento indefinido (el enunciado deja el manejo de
+        instrucciones/accesos inválidos a criterio de la implementación).
+  \item \textbf{Stack pointer} (\code{x2}) inicializado al tope de la memoria
+        (\code{0x100000}), de modo que los programas con recursión (p.\,ej.\
+        quicksort) dispongan de pila.
+  \item \textbf{Fin de programa}: se reconoce tanto \code{ecall exit}/\code{ebreak}
+        como un salto a sí mismo (idiom \code{done: beq x0,x0,done}), reportado
+        como ``bucle infinito (programa terminado)''.
+\end{itemize}
+
+\section{Verificación}
+
+Se probaron 5 programas (fuente \code{.s} + binario \code{.bin} en
+\code{tests/}):
+
+\begin{center}
+\small
+\begin{tabular}{@{}p{2.4cm}p{6.4cm}p{4.6cm}@{}}
+\toprule
+\textbf{Programa} & \textbf{Instrucciones probadas} & \textbf{Resultado obtenido} \\
+\midrule
+\code{riscvtest} & add, sub, and, or, slt, addi, lw, sw, beq, jal & \code{mem[0x64] = 25 (0x19)} \checkmark \\
+\code{loop\_sum} & branches + \code{ecall} print\_int & imprime \code{55} \checkmark \\
+\code{ecall\_demo} & print\_string / print\_int / print\_char / exit & \code{Hola RISC-V! La respuesta es: 42} \checkmark \\
+\code{quicksort} & recursión (\code{jal}/\code{jalr}, pila), loads/stores, slt & \code{\{6,4,3,2,1,8,9\}} $\rightarrow$ \code{\{1,2,3,4,6,8,9\}} \checkmark \\
+\code{symmetric} & recursión, evalúa si un árbol es simétrico & \code{a0 = 1} (simétrico) / \code{a0 = 0} \checkmark \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+El resultado de \code{riscvtest} coincide exactamente con el esperado por el
+enunciado (escribe $25 = \text{0x19}$ en la dirección $100 = \text{0x64}$).
+
+\section{Otros detalles relevantes}
+
+\begin{itemize}[topsep=2pt]
+  \item \textbf{Toolchain (Windows/MSYS2):} \code{g++} debe encontrar sus
+        subprocesos (\code{as}, \code{collect2}); para ello
+        \code{C:\textbackslash msys64\textbackslash ucrt64\textbackslash bin}
+        debe estar en el \code{PATH}.
+  \item \textbf{Nivel de optimización:} el proyecto se compila con \code{-O1}.
+        Con \code{-O2}, en este entorno específico se observaron fallos
+        esporádicos durante la \emph{carga} del ejecutable (el proceso terminaba
+        antes de ejecutar la primera línea, sin relación con la lógica del
+        simulador, que se verificó correcta de forma independiente). \code{-O1}
+        es estable y suficiente: el rendimiento no es un requisito para un
+        simulador.
+  \item \textbf{No se implementó un ensamblador como parte del simulador} (no es
+        requisito): \code{tests/asm.py} es sólo una herramienta auxiliar para
+        generar binarios de prueba reproducibles, equivalentes a los que se
+        descargarían de CPUlator en formato Raw.
+\end{itemize}
+
+\section{Uso del simulador}
+
+\begin{lstlisting}
+$ ./riscv-sim tests/riscvtest.bin
+"tests/riscvtest.bin" cargado a memoria.
+
+> step
+0x00000000:  00500113   addi sp, zero, 5
+> regs x2
+x2  (sp  ) = 0x00000005  (5)
+> run
+Ejecutadas 16 instrucciones. Estado: bucle infinito (programa terminado).
+> mem 0x64 0x67
+Memoria (0x00000064-0x00000067):
+  0x00000064: 19 00 00 00
+> exit
+See you next time...
+\end{lstlisting}
+
+\end{document}
